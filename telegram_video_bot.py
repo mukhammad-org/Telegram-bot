@@ -1669,8 +1669,8 @@ def main():
     if not BOT_TOKEN:
         print("❌ Error: TELEGRAM_BOT_TOKEN environment variable not set!")
         print("\nPlease set it using one of these methods:")
-        print("1. Create a .env file with: TELEGRAM_BOT_TOKEN=your_token_here")
-        print("2. Or export it: export TELEGRAM_BOT_TOKEN='your_token_here'")
+        print("1. Create a .env file with: TELEGRAM_BOT_TOKEN=8570524952:AAFUq1H3vS8xexvwl0Q0AALeLxZ9F15KbAs")
+        print("2. Or export it: export TELEGRAM_BOT_TOKEN='8570524952:AAFUq1H3vS8xexvwl0Q0AALeLxZ9F15KbAs'")
         print("\nTo use .env files, install python-dotenv:")
         print("   pip3 install python-dotenv")
         return
