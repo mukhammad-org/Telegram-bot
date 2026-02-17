@@ -1,0 +1,24 @@
+{
+  "6593296393": {
+    "username": "mukhammad_org",
+    "total_deficit_seconds": 26512,
+    "total_worked_seconds": 2405,
+    "daily_worked": {
+      "2026-02-16": 2405
+    },
+    "weekly_worked": {
+      "2026-W07": 2405
+    },
+    "monthly_worked": {
+      "2026-02": 2405
+    },
+    "streak_days": 1,
+    "last_video_date": "2026-02-16",
+    "warnings_sent": [],
+    "last_updated": "2026-02-16T22:22:55.685158",
+    "daily_total_today": 117,
+    "today_date": "2026-02-16",
+    "last_video_timestamp": "2026-02-16T22:17:28.136549+09:00",
+    "started_bot": true
+  }
+}
