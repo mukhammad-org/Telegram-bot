@@ -1,0 +1,25 @@
+# Environment variables - never commit these
+.env
+
+# Bot data files - Railway uses ephemeral storage, use volumes or external DB
+user_deficits.json
+group_timezone.json
+user_timezones.json
+video_hashes.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.Python
+env/
+venv/
+.venv/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
