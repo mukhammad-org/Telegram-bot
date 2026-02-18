@@ -184,6 +184,7 @@ class VideoBot:
     def __init__(self):
         self.user_deficits = self.load_data()
         self.video_hashes = self.load_video_hashes()
+        self.user_activities = self.load_user_activities()
         self.kick_threshold = 60 * 60 * 60  # 60 hours in seconds
         self.warning_thresholds = {
             'quarter': 15 * 60 * 60,  # 15 hours (25%)
@@ -191,8 +192,9 @@ class VideoBot:
             'three_quarter': 45 * 60 * 60  # 45 hours (75%)
         }
     
-    def load_data(self):
-        """Load user deficit data from file"""
+    def load_user_activities(self):
+      """Load user activity log"""
+       activity_file = os.path.join(DATA_DIR, 'user_activities.json')
         if os.path.exists(DATA_FILE):
             try:
                 with open(DATA_FILE, 'r') as f:
@@ -218,6 +220,7 @@ class VideoBot:
                 logger.error(f"Error loading data: {e}")
                 return {}
         return {}
+        
     
     def load_video_hashes(self):
         """Load video hashes from file"""
@@ -230,6 +233,14 @@ class VideoBot:
                 logger.error(f"Error loading video hashes: {e}")
                 return {}
         return {}
+        def save_user_activities(self):
+        """Save user activity log"""
+       try:
+           activity_file = os.path.join(DATA_DIR, 'user_activities.json')
+            with open(activity_file, 'w') as f:
+          json.dump(self.user_activities, f, indent=2)
+       except Exception as e:
+logger.error(f"Error saving user activities: {e}")
     
     def save_data(self):
         """Save user deficit data to file"""
@@ -238,7 +249,94 @@ class VideoBot:
                 json.dump(self.user_deficits, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving data: {e}")
+def log_activity(self, user_id, username, activity_type, details=None):
+        """Log any user activity in the bot"""
+        user_key = str(user_id)
+        timestamp = datetime.now().isoformat()
+        
+       # Initialize user activity record if not exists
+        if user_key not in self.user_activities:
+            self.user_activities[user_key] = {
+                'user_id': user_id,
+                'username': username,
+               'first_seen': timestamp,
+                'started_bot': False,
+               'activities': []
+            }
+        
+       # Update username if changed
+        self.user_activities[user_key]['username'] = username
+       
+        # Log the activity
+        activity_entry = {
+            'timestamp': timestamp,
+           'type': activity_type,
+            'details': details
+        }        
+        self.user_activities[user_key]['activities'].append(activity_entry)
+        
+        # Keep only last 100 activities per user to avoid huge files
+        if len(self.user_activities[user_key]['activities']) > 100:
+            self.user_activities[user_key]['activities'] = self.user_activities[user_key]['activities'][-100:]
+        
+        self.save_user_activities()
+        logger.info(f"Activity logged: {username} - {activity_type}")
     
+    def mark_bot_started(self, user_id, username):
+        """Mark that user has started the bot (clicked /start in private)"""
+        user_key = str(user_id)
+        
+        if user_key not in self.user_activities:
+            self.user_activities[user_key] = {
+                'user_id': user_id,
+                'username': username,
+                'first_seen': datetime.now().isoformat(),
+                'started_bot': False,
+                'activities': []
+            }
+        
+        self.user_activities[user_key]['started_bot'] = True
+        self.user_activities[user_key]['bot_started_at'] = datetime.now().isoformat()
+        self.save_user_activities()    
+    def get_bot_subscribers_count(self):
+       """Get count of users who have started the bot"""
+        count = 0
+        for data in self.user_activities.values():
+            if data.get('started_bot', False):
+                count += 1
+        return count
+   
+  def get_all_users_count(self):
+        """Get total count of all users who interacted with bot"""
+        return len(self.user_activities)
+    
+    def load_data(self):
+        """Load user deficit data from file"""
+        if os.path.exists(DATA_FILE):
+              try:
+                with open(DATA_FILE, 'r') as f:
+                    data = json.load(f)
+                   # Migrate old data format if needed
+                    for user_id in data:
+                        if 'total_worked_seconds' not in data[user_id]:
+                            data[user_id]['total_worked_seconds'] = 0
+                        if 'daily_worked' not in data[user_id]:
+                            data[user_id]['daily_worked'] = {}
+                        if 'weekly_worked' not in data[user_id]:
+                            data[user_id]['weekly_worked'] = {}
+                        if 'monthly_worked' not in data[user_id]:
+                            data[user_id]['monthly_worked'] = {}
+                        if 'streak_days' not in data[user_id]:
+                            data[user_id]['streak_days'] = 0
+                        if 'last_video_date' not in data[user_id]:
+                               data[user_id]['last_video_date'] = None
+                       if 'warnings_sent' not in data[user_id]:
+                            data[user_id]['warnings_sent'] = []
+                    return data
+            except Exception as e:
+                logger.error(f"Error loading data: {e}")
+                return {}
+        return {}    
     def save_video_hashes(self):
         """Save video hashes to file"""
         try:
@@ -647,7 +745,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_private = chat.type == 'private'
     user = update.message.from_user
     
-    # Assign unique ID and mark bot started if in private
+bot_instance.log_activity(user.id, username, 'start_command', {'chat_type': chat.type})    # Assign unique ID and mark bot started if in private
+
     if is_private:
         unique_id = bot_instance.assign_user_id(user.id, user.username or user.first_name)
         bot_instance.mark_user_started_bot(user.id)
@@ -752,7 +851,18 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         duration = video.duration
         user_id = user.id
         username = user.username or user.first_name or f"User_{user_id}"
-        
+
+ 
+bot_instance.log_activity(
+    user_id, 
+    username, 
+    'video_submitted', 
+    {
+        'duration': duration,
+        'chat_type': 'private' if is_private else 'group',
+        'file_unique_id': file_unique_id
+    }
+)
         # CHECK FOR DUPLICATE VIDEO FIRST
         if bot_instance.is_duplicate_video(file_id, file_unique_id):
             original_info = bot_instance.get_video_info(file_unique_id)
@@ -1093,7 +1203,8 @@ async def subscribers_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = update.message.from_user
     chat = update.effective_chat
     is_private = chat.type == 'private'
-    
+
+    bot_instance.log_activity(user.id, username, 'subscribers_command', {'chat_type': chat.type})
     # In group - check admin status
     if not is_private:
         try:
@@ -1115,8 +1226,10 @@ async def subscribers_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     
     # Build message
-    message = f"👥 **Bot Subscribers: {bot_subscriber_count}**\n\n"
-    
+  message = f"👥 **User Statistics**\n\n"
+message += f"🤖 Bot subscribers: **{bot_subscriber_count}**\n"
+message += f"📊 Total users interacted: {total_users_count}\n"
+...
     # Show users who started the bot
     bot_users = [(uid, data) for uid, data in all_users.items() if data.get('started_bot', False)]
     
