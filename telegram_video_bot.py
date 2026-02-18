@@ -4,7 +4,9 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from telegram import Update
-from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filtersschedulers.asyncio import AsyncIOScheduler
+from telegram.ext 
+import Application, MessageHandler, CommandHandler, ContextTypes, filters 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 # Try to load .env file if python-dotenv is available
