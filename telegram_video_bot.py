@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from telegram import Update
-from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters 
+from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -22,10 +22,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# File to store user deficits
-DATA_FILE = 'user_deficits.json'
-TIMEZONE_FILE = 'group_timezone.json'
-USER_TIMEZONES_FILE = 'user_timezones.json'
+# Data directory — uses Railway volume if available, otherwise local
+DATA_DIR = '/app/data' if os.path.exists('/app/data') else '.'
+os.makedirs(DATA_DIR, exist_ok=True)
+
+DATA_FILE = os.path.join(DATA_DIR, 'user_deficits.json')
+TIMEZONE_FILE = os.path.join(DATA_DIR, 'group_timezone.json')
+USER_TIMEZONES_FILE = os.path.join(DATA_DIR, 'user_timezones.json')
+HASH_FILE = os.path.join(DATA_DIR, 'video_hashes.json')
 
 # Minimum required video duration in seconds (2 hours)
 MIN_DURATION = 2 * 60 * 60  # 7200 seconds
@@ -194,8 +198,91 @@ class VideoBot:
         }
     
     def load_user_activities(self):
-      """Load user activity log"""
-       activity_file = os.path.join(DATA_DIR, 'user_activities.json')
+        """Load user activity log"""
+        activity_file = os.path.join(DATA_DIR, 'user_activities.json')
+        if os.path.exists(activity_file):
+            try:
+                with open(activity_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading user activities: {e}")
+                return {}
+        return {}
+    
+    def save_user_activities(self):
+        """Save user activity log"""
+        try:
+            activity_file = os.path.join(DATA_DIR, 'user_activities.json')
+            with open(activity_file, 'w') as f:
+                json.dump(self.user_activities, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving user activities: {e}")
+    
+    def log_activity(self, user_id, username, activity_type, details=None):
+        """Log any user activity in the bot"""
+        user_key = str(user_id)
+        timestamp = datetime.now().isoformat()
+        
+        # Initialize user activity record if not exists
+        if user_key not in self.user_activities:
+            self.user_activities[user_key] = {
+                'user_id': user_id,
+                'username': username,
+                'first_seen': timestamp,
+                'started_bot': False,
+                'activities': []
+            }
+        
+        # Update username if changed
+        self.user_activities[user_key]['username'] = username
+        
+        # Log the activity
+        activity_entry = {
+            'timestamp': timestamp,
+            'type': activity_type,
+            'details': details
+        }
+        
+        self.user_activities[user_key]['activities'].append(activity_entry)
+        
+        # Keep only last 100 activities per user to avoid huge files
+        if len(self.user_activities[user_key]['activities']) > 100:
+            self.user_activities[user_key]['activities'] = self.user_activities[user_key]['activities'][-100:]
+        
+        self.save_user_activities()
+        logger.info(f"Activity logged: {username} - {activity_type}")
+    
+    def mark_bot_started(self, user_id, username):
+        """Mark that user has started the bot (clicked /start in private)"""
+        user_key = str(user_id)
+        
+        if user_key not in self.user_activities:
+            self.user_activities[user_key] = {
+                'user_id': user_id,
+                'username': username,
+                'first_seen': datetime.now().isoformat(),
+                'started_bot': False,
+                'activities': []
+            }
+        
+        self.user_activities[user_key]['started_bot'] = True
+        self.user_activities[user_key]['bot_started_at'] = datetime.now().isoformat()
+        self.save_user_activities()
+    
+    def get_bot_subscribers_count(self):
+        """Get count of users who have started the bot"""
+        count = 0
+        for data in self.user_activities.values():
+            if data.get('started_bot', False):
+                count += 1
+        return count
+    
+    def get_all_users_count(self):
+        """Get total count of all users who interacted with bot"""
+        return len(self.user_activities)
+    
+    def load_data(self):
+        """Load user deficit data from file"""
         if os.path.exists(DATA_FILE):
             try:
                 with open(DATA_FILE, 'r') as f:
@@ -221,27 +308,17 @@ class VideoBot:
                 logger.error(f"Error loading data: {e}")
                 return {}
         return {}
-        
     
     def load_video_hashes(self):
         """Load video hashes from file"""
-        hash_file = 'video_hashes.json'
-        if os.path.exists(hash_file):
+        if os.path.exists(HASH_FILE):
             try:
-                with open(hash_file, 'r') as f:
+                with open(HASH_FILE, 'r') as f:
                     return json.load(f)
             except Exception as e:
                 logger.error(f"Error loading video hashes: {e}")
                 return {}
         return {}
-        def save_user_activities(self):
-        """Save user activity log"""
-       try:
-           activity_file = os.path.join(DATA_DIR, 'user_activities.json')
-            with open(activity_file, 'w') as f:
-          json.dump(self.user_activities, f, indent=2)
-       except Exception as e:
-logger.error(f"Error saving user activities: {e}")
     
     def save_data(self):
         """Save user deficit data to file"""
@@ -250,98 +327,11 @@ logger.error(f"Error saving user activities: {e}")
                 json.dump(self.user_deficits, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving data: {e}")
-def log_activity(self, user_id, username, activity_type, details=None):
-        """Log any user activity in the bot"""
-        user_key = str(user_id)
-        timestamp = datetime.now().isoformat()
-        
-       # Initialize user activity record if not exists
-        if user_key not in self.user_activities:
-            self.user_activities[user_key] = {
-                'user_id': user_id,
-                'username': username,
-               'first_seen': timestamp,
-                'started_bot': False,
-               'activities': []
-            }
-        
-       # Update username if changed
-        self.user_activities[user_key]['username'] = username
-       
-        # Log the activity
-        activity_entry = {
-            'timestamp': timestamp,
-           'type': activity_type,
-            'details': details
-        }        
-        self.user_activities[user_key]['activities'].append(activity_entry)
-        
-        # Keep only last 100 activities per user to avoid huge files
-        if len(self.user_activities[user_key]['activities']) > 100:
-            self.user_activities[user_key]['activities'] = self.user_activities[user_key]['activities'][-100:]
-        
-        self.save_user_activities()
-        logger.info(f"Activity logged: {username} - {activity_type}")
     
-    def mark_bot_started(self, user_id, username):
-        """Mark that user has started the bot (clicked /start in private)"""
-        user_key = str(user_id)
-        
-        if user_key not in self.user_activities:
-            self.user_activities[user_key] = {
-                'user_id': user_id,
-                'username': username,
-                'first_seen': datetime.now().isoformat(),
-                'started_bot': False,
-                'activities': []
-            }
-        
-        self.user_activities[user_key]['started_bot'] = True
-        self.user_activities[user_key]['bot_started_at'] = datetime.now().isoformat()
-        self.save_user_activities()    
-    def get_bot_subscribers_count(self):
-       """Get count of users who have started the bot"""
-        count = 0
-        for data in self.user_activities.values():
-            if data.get('started_bot', False):
-                count += 1
-        return count
-   
-  def get_all_users_count(self):
-        """Get total count of all users who interacted with bot"""
-        return len(self.user_activities)
-    
-    def load_data(self):
-        """Load user deficit data from file"""
-        if os.path.exists(DATA_FILE):
-              try:
-                with open(DATA_FILE, 'r') as f:
-                    data = json.load(f)
-                   # Migrate old data format if needed
-                    for user_id in data:
-                        if 'total_worked_seconds' not in data[user_id]:
-                            data[user_id]['total_worked_seconds'] = 0
-                        if 'daily_worked' not in data[user_id]:
-                            data[user_id]['daily_worked'] = {}
-                        if 'weekly_worked' not in data[user_id]:
-                            data[user_id]['weekly_worked'] = {}
-                        if 'monthly_worked' not in data[user_id]:
-                            data[user_id]['monthly_worked'] = {}
-                        if 'streak_days' not in data[user_id]:
-                            data[user_id]['streak_days'] = 0
-                        if 'last_video_date' not in data[user_id]:
-                               data[user_id]['last_video_date'] = None
-                       if 'warnings_sent' not in data[user_id]:
-                            data[user_id]['warnings_sent'] = []
-                    return data
-            except Exception as e:
-                logger.error(f"Error loading data: {e}")
-                return {}
-        return {}    
     def save_video_hashes(self):
         """Save video hashes to file"""
         try:
-            with open('video_hashes.json', 'w') as f:
+            with open(HASH_FILE, 'w') as f:
                 json.dump(self.video_hashes, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving video hashes: {e}")
@@ -745,12 +735,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     is_private = chat.type == 'private'
     user = update.message.from_user
+    username = user.username or user.first_name or f"User_{user.id}"
     
-bot_instance.log_activity(user.id, username, 'start_command', {'chat_type': chat.type})    # Assign unique ID and mark bot started if in private
-
+    # Log activity
+    bot_instance.log_activity(user.id, username, 'start_command', {'chat_type': chat.type})
+    
+    # Assign unique ID and mark bot started if in private
     if is_private:
-        unique_id = bot_instance.assign_user_id(user.id, user.username or user.first_name)
-        bot_instance.mark_user_started_bot(user.id)
+        unique_id = bot_instance.assign_user_id(user.id, username)
+        bot_instance.mark_bot_started(user.id, username)
     
     if is_private:
         # Private message - modern, clean interface
@@ -767,6 +760,7 @@ bot_instance.log_activity(user.id, username, 'start_command', {'chat_type': chat
             "━━━━━━━━━━━━━━━━━━━━\n"
             "📊 **YOUR STATS**\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
+            "⏰ /status - Current time & hours left\n"
             "📊 /myhours - Total video hours\n"
             "⚠️ /mydeficit - Time you owe\n"
             "🔥 /mystreak - Consecutive days\n"
@@ -852,18 +846,19 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         duration = video.duration
         user_id = user.id
         username = user.username or user.first_name or f"User_{user_id}"
-
- 
-bot_instance.log_activity(
-    user_id, 
-    username, 
-    'video_submitted', 
-    {
-        'duration': duration,
-        'chat_type': 'private' if is_private else 'group',
-        'file_unique_id': file_unique_id
-    }
-)
+        
+        # Log video submission activity
+        bot_instance.log_activity(
+            user_id, 
+            username, 
+            'video_submitted', 
+            {
+                'duration': duration,
+                'chat_type': 'private' if is_private else 'group',
+                'file_unique_id': file_unique_id
+            }
+        )
+        
         # CHECK FOR DUPLICATE VIDEO FIRST
         if bot_instance.is_duplicate_video(file_id, file_unique_id):
             original_info = bot_instance.get_video_info(file_unique_id)
@@ -988,7 +983,11 @@ async def my_deficit_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Show user's current deficit"""
     user = update.message.from_user
     user_id = user.id
+    username = user.username or user.first_name or f"User_{user_id}"
     chat = update.effective_chat
+    
+    # Log activity
+    bot_instance.log_activity(user_id, username, 'my_deficit_command', {'chat_type': chat.type})
     
     # If in group, redirect to private message
     if chat.type != 'private':
@@ -1074,6 +1073,71 @@ async def my_streak_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📹 You don't have a streak yet!\n"
             "Submit a video today to start your streak!"
         )
+
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show current time and hours left to submit today"""
+    user = update.message.from_user
+    user_id = user.id
+    chat = update.effective_chat
+    is_private = chat.type == 'private'
+    
+    # Get user's timezone if in private, otherwise use group timezone
+    if is_private:
+        user_tz = get_user_timezone(user_id)
+        current_time = datetime.now(ZoneInfo(user_tz))
+        tz_name = user_tz
+    else:
+        current_time = get_current_time()
+        tz_name = GROUP_TIMEZONE
+    
+    # Calculate time until midnight
+    midnight = current_time.replace(hour=23, minute=59, second=59, microsecond=999999)
+    time_until_midnight = midnight - current_time
+    hours_left = time_until_midnight.total_seconds() / 3600
+    
+    # Get user's submission status
+    todays_total = bot_instance.get_todays_total(user_id)
+    remaining_today = bot_instance.get_remaining_for_today(user_id)
+    current_deficit = bot_instance.get_user_deficit(user_id)
+    streak = bot_instance.get_user_streak(user_id)
+    
+    # Format times
+    current_time_str = current_time.strftime('%I:%M:%S %p')
+    current_date_str = current_time.strftime('%A, %B %d, %Y')
+    hours_left_str = f"{int(hours_left)}h {int((hours_left % 1) * 60)}m"
+    
+    message = f"⏰ **Current Status**\n\n"
+    message += f"━━━━━━━━━━━━━━━━━━━━\n"
+    message += f"🕐 Time now: {current_time_str}\n"
+    message += f"📅 Date: {current_date_str}\n"
+    message += f"🌍 Timezone: {tz_name}\n"
+    message += f"⏳ Time until midnight: {hours_left_str}\n"
+    message += f"━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    if todays_total > 0:
+        todays_formatted = bot_instance.format_duration(todays_total)
+        message += f"📊 **Today's Progress:**\n"
+        message += f"✅ Submitted: {todays_formatted}\n"
+    else:
+        message += f"📊 **Today's Progress:**\n"
+        message += f"❌ Not submitted yet\n"
+    
+    if remaining_today > 0:
+        remaining_formatted = bot_instance.format_duration(remaining_today)
+        message += f"⏰ Still needed: {remaining_formatted}\n"
+    else:
+        message += f"✅ Today's 2h requirement met!\n"
+    
+    if current_deficit > 0:
+        deficit_formatted = bot_instance.format_duration(current_deficit)
+        message += f"⚠️ Owed time: {deficit_formatted}\n"
+    
+    message += f"🔥 Current streak: {streak} day{'s' if streak != 1 else ''}\n"
+    message += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+    message += f"💡 Submit before midnight to avoid adding 2h to your owed time!"
+    
+    await update.message.reply_text(message, parse_mode='Markdown')
 
 
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE, period='day'):
@@ -1202,10 +1266,13 @@ async def all_deficits_command(update: Update, context: ContextTypes.DEFAULT_TYP
 async def subscribers_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show bot subscribers count and list"""
     user = update.message.from_user
+    username = user.username or user.first_name or f"User_{user.id}"
     chat = update.effective_chat
     is_private = chat.type == 'private'
-
+    
+    # Log activity
     bot_instance.log_activity(user.id, username, 'subscribers_command', {'chat_type': chat.type})
+    
     # In group - check admin status
     if not is_private:
         try:
@@ -1218,28 +1285,37 @@ async def subscribers_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             await update.message.reply_text("❌ Could not verify admin status.")
             return
     
-    # Get bot subscribers count
+    # Get bot subscribers count (users who clicked /start in bot)
     bot_subscriber_count = bot_instance.get_bot_subscribers_count()
-    all_users = bot_instance.user_deficits
+    total_users_count = bot_instance.get_all_users_count()
     
-    if not all_users:
+    if not bot_instance.user_activities:
         await update.message.reply_text("📋 No users yet!")
         return
     
     # Build message
-  message = f"👥 **User Statistics**\n\n"
-message += f"🤖 Bot subscribers: **{bot_subscriber_count}**\n"
-message += f"📊 Total users interacted: {total_users_count}\n"
-...
+    message = f"👥 **User Statistics**\n\n"
+    message += f"🤖 Bot subscribers: **{bot_subscriber_count}**\n"
+    message += f"   (Users who clicked /start in bot)\n\n"
+    message += f"📊 Total users interacted: {total_users_count}\n"
+    message += f"━━━━━━━━━━━━━━━━━━━━\n\n"
+    
     # Show users who started the bot
-    bot_users = [(uid, data) for uid, data in all_users.items() if data.get('started_bot', False)]
+    bot_users = [
+        (uid, data) for uid, data in bot_instance.user_activities.items() 
+        if data.get('started_bot', False)
+    ]
     
     if bot_users:
-        message += "**Users who started the bot:**\n"
-        for user_id, data in sorted(bot_users, key=lambda x: x[1].get('unique_id', 999)):
-            unique_id = data.get('unique_id', 'N/A')
-            username = data['username']
-            message += f"#{unique_id} @{username}\n"
+        message += "**Bot Subscribers:**\n"
+        for i, (user_id, data) in enumerate(sorted(bot_users, key=lambda x: x[1].get('bot_started_at', '')), 1):
+            uname = data['username']
+            started_at = data.get('bot_started_at', 'Unknown')
+            try:
+                started_date = datetime.fromisoformat(started_at).strftime('%Y-%m-%d')
+            except:
+                started_date = 'Unknown'
+            message += f"{i}. @{uname} (joined: {started_date})\n"
     else:
         message += "No bot subscribers yet."
     
@@ -1630,15 +1706,27 @@ async def send_midnight_summary(application):
     
     try:
         today = get_current_date_str()
+        now = get_current_time()
         
-        # MIDNIGHT: Add shortfall for today's 2h requirement only
-        # (existing deficit already reduced live whenever a video is submitted)
+        # MIDNIGHT: Process each user
         for user_id, data in list(bot_instance.user_deficits.items()):
             if data.get('today_date') == today:
                 todays_total = data.get('daily_total_today', 0)
             else:
                 todays_total = 0  # submitted nothing today
             
+            # Check if more than 24 hours since last video (reset streak)
+            last_video_timestamp = data.get('last_video_timestamp')
+            if last_video_timestamp:
+                last_dt = datetime.fromisoformat(last_video_timestamp)
+                hours_since_last = (now.replace(tzinfo=None) - last_dt).total_seconds() / 3600
+                
+                if hours_since_last >= 24:
+                    # More than 24 hours - reset streak to 0
+                    bot_instance.user_deficits[user_id]['streak_days'] = 0
+                    logger.info(f"Midnight: Reset streak for {data['username']} (24+ hours since last video)")
+            
+            # Add shortfall to deficit if didn't meet today's 2h
             if todays_total < MIN_DURATION:
                 shortfall = MIN_DURATION - todays_total
                 bot_instance.user_deficits[user_id]['total_deficit_seconds'] = (
@@ -1782,8 +1870,8 @@ def main():
     if not BOT_TOKEN:
         print("❌ Error: TELEGRAM_BOT_TOKEN environment variable not set!")
         print("\nPlease set it using one of these methods:")
-        print("1. Create a .env file with: TELEGRAM_BOT_TOKEN=8570524952:AAFUq1H3vS8xexvwl0Q0AALeLxZ9F15KbAs")
-        print("2. Or export it: export TELEGRAM_BOT_TOKEN='8570524952:AAFUq1H3vS8xexvwl0Q0AALeLxZ9F15KbAs'")
+        print("1. Create a .env file with: TELEGRAM_BOT_TOKEN=your_token_here")
+        print("2. Or export it: export TELEGRAM_BOT_TOKEN='your_token_here'")
         print("\nTo use .env files, install python-dotenv:")
         print("   pip3 install python-dotenv")
         return
@@ -1872,6 +1960,7 @@ def main():
     application.add_handler(CommandHandler("mydeficit", my_deficit_command))
     application.add_handler(CommandHandler("myhours", my_hours_command))
     application.add_handler(CommandHandler("mystreak", my_streak_command))
+    application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("today", today_leaderboard))
     application.add_handler(CommandHandler("week", week_leaderboard))
     application.add_handler(CommandHandler("month", month_leaderboard))
@@ -1892,6 +1981,7 @@ def main():
             BotCommand("myhours", "📊 View your total video hours"),
             BotCommand("mydeficit", "⚠️ Check your time deficit"),
             BotCommand("mystreak", "🔥 See your daily streak"),
+            BotCommand("status", "⏰ Check time & remaining hours"),
             BotCommand("settimezone", "🌍 Set your timezone"),
             BotCommand("subscribers", "👥 View bot subscribers"),
             BotCommand("today", "📅 Today's rankings"),
