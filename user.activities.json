@@ -1,0 +1,57 @@
+{
+  "123456789": {
+    "user_id": 123456789,
+    "username": "alice",
+    "first_seen": "2024-02-18T14:30:00",
+    "started_bot": true,
+    "bot_started_at": "2024-02-18T14:30:00",
+    "activities": [
+      {
+        "timestamp": "2024-02-18T14:30:00",
+        "type": "start_command",
+        "details": {"chat_type": "private"}
+      },
+      {
+        "timestamp": "2024-02-18T15:00:00",
+        "type": "video_submitted",
+        "details": {
+          "duration": 7200,
+          "chat_type": "private",
+          "file_unique_id": "xyz123"
+        }
+      },
+      {
+        "timestamp": "2024-02-18T16:00:00",
+        "type": "my_deficit_command",
+        "details": {"chat_type": "private"}
+      }
+    ]
+  }
+}
+```
+
+### **Activities Logged:**
+- ✅ `/start` command (marks as bot subscriber)
+- ✅ Video submissions (with duration, chat type)
+- ✅ `/mydeficit`, `/myhours`, `/mystreak` commands
+- ✅ `/subscribers` command
+- ✅ Every interaction is timestamped
+
+### **Last 100 Activities Per User:**
+To prevent huge file sizes, only the most recent 100 activities per user are kept.
+
+## 👥 Updated `/subscribers` Command:
+```
+👥 User Statistics
+
+🤖 Bot subscribers: 15
+   (Users who clicked /start in bot)
+
+📊 Total users interacted: 23
+━━━━━━━━━━━━━━━━━━━━
+
+Bot Subscribers:
+1. @alice (joined: 2024-02-15)
+2. @bob (joined: 2024-02-16)
+3. @charlie (joined: 2024-02-17)
+...
